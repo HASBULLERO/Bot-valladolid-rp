@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
+const { Configuration, OpenAIApi } = require('openai');
 
 // ----------------- Servidor web para 24/7 -----------------
 const app = express();
@@ -17,6 +18,7 @@ client.once(Events.ClientReady, () => {
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  // ---------------- Comandos clásicos ----------------
   if (interaction.commandName === 'ping') {
     await interaction.reply('Pong!');
   }
@@ -86,13 +88,37 @@ client.on(Events.InteractionCreate, async interaction => {
 **/unmute** → quitar mute  
 **/coinflip** → lanza moneda  
 **/help** → muestra este mensaje  
+**/ask** → pregunta algo a la IA  
         `
       }]
     });
   }
+
+  // ---------------- Comando IA ----------------
+  if (interaction.commandName === 'ask') {
+    await interaction.deferReply();
+    const pregunta = interaction.options.getString('pregunta');
+
+    try {
+      const configuration = new Configuration({ apiKey: process.env.OPENAI_API_KEY });
+      const openai = new OpenAIApi(configuration);
+
+      const response = await openai.createChatCompletion({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: pregunta }],
+      });
+
+      const answer = response.data.choices[0].message.content;
+      await interaction.editReply(answer);
+
+    } catch (error) {
+      console.error(error);
+      await interaction.editReply('Hubo un error al comunicarse con la IA.');
+    }
+  }
 });
 
-// Registrar comandos slash
+// ---------------- Registrar comandos slash ----------------
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Responde con Pong!'),
   new SlashCommandBuilder()
@@ -123,7 +149,11 @@ const commands = [
     .addUserOption(option => option.setName('usuario').setDescription('El usuario a desmutear').setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.MuteMembers),
   new SlashCommandBuilder().setName('coinflip').setDescription('Lanza una moneda al aire'),
-  new SlashCommandBuilder().setName('help').setDescription('Muestra todos los comandos')
+  new SlashCommandBuilder().setName('help').setDescription('Muestra todos los comandos'),
+  new SlashCommandBuilder()
+    .setName('ask')
+    .setDescription('Pregunta algo a la IA')
+    .addStringOption(option => option.setName('pregunta').setDescription('La pregunta que quieres hacer').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
