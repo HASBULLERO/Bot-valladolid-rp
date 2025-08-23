@@ -1,18 +1,18 @@
 {
-  "name": "discord-bot",
+  "name": "nodejs",
   "version": "1.0.0",
-  "description": "Bot de Discord en Render",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.15.3",
+    "@types/node": "^22.13.11",
+    "discord.js": "^14.22.1",
     "dotenv": "^17.2.1",
-    "express": "^4.19.2",
-    "openai": "^4.9.0"
-  },
-  "engines": {
-    "node": "18.x"
+    "openai": "^5.15.0"
   }
 }
