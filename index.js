@@ -1,182 +1,196 @@
 const { 
-    Client, GatewayIntentBits, Partials, Collection, 
-    SlashCommandBuilder, REST, Routes, PermissionFlagsBits,
-    ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder 
-} = require('discord.js');
-const OpenAI = require("openai");
-require('dotenv').config();
-const express = require("express"); // Para mantener activo en Render
+  Client, 
+  GatewayIntentBits, 
+  EmbedBuilder, 
+  PermissionsBitField, 
+  SlashCommandBuilder 
+} = require("discord.js");
+require("dotenv").config();
 
-// --- Servidor web mínimo para Render ---
-const app = express();
-app.get("/", (req, res) => res.send("Bot activo"));
-app.listen(process.env.PORT || 3000, () => console.log("✅ Servidor web activo"));
-
-// --- Cliente Discord ---
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent
-    ],
-    partials: [Partials.Channel]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ]
 });
 
-client.commands = new Collection();
+// ======= CONFIG =======
+let serverStatus = "open"; // Estado inicial del servidor
+const autoRoleId = "ID_DEL_ROL_CIUDADANO"; // Cambia esto al ID del rol
+const muteRoleId = "ID_DEL_ROL_MUTE"; // Rol que bloquea hablar (para anti-raid)
+const warnLogsChannel = "ID_CANAL_LOGS"; // Canal donde se registran warns
 
-// ------------------- COMANDOS ------------------- //
-const commands = [
-    // Aquí van todos tus SlashCommandBuilder como los tenías
-].map(cmd => cmd.toJSON());
+// ======= EMBEDS =======
+const embedAbierto = new EmbedBuilder()
+  .setTitle("Servidor abierto <:ok:1408963791726579762>")
+  .setDescription(
+    "Nuestro servidor se encuentra activo\n" +
+    "Disfruta nuestra sesión de roleplay\n" +
+    "Recuerda ver <#1408918972681949224> para evitar ser sancionado\n" +
+    "Disfruta :D\n\n" +
+    "**Código de acceso:** `m8ix1eda`\n" +
+    "[Unirme al servidor](https://www.roblox.com/games/start?placeId=7711635737&launchData=joinCode%3Dm8ix1eda)"
+  )
+  .setImage("https://cdn.discordapp.com/attachments/1408918829978882050/1409722038578446516/ChatGPT_Image_25_ago_2025_09_04_06_p.m..png")
+  .setColor("Green");
 
-// ------------------- REGISTRAR COMANDOS ------------------- //
-client.once('ready', async () => {
-    console.log(`✅ Bot conectado como ${client.user.tag}`);
-    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    try {
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log("✅ Comandos cargados");
-    } catch (err) {
-        console.error(err);
-    }
+const embedCerrado = new EmbedBuilder()
+  .setTitle("Servidor cerrado <:error:1408963793278730260>")
+  .setDescription("Nuestro servidor está cerrado\nNo te podrás unir de momento\n\nTe esperamos en nuestra próxima sesión")
+  .setImage("https://cdn.discordapp.com/attachments/1408918829978882050/1409722038578446516/ChatGPT_Image_25_ago_2025_09_04_06_p.m..png")
+  .setColor("Red");
+
+// ======= EVENTOS =======
+
+// Bot listo
+client.once("ready", () => {
+  console.log(`✅ Bot conectado como ${client.user.tag}`);
 });
 
-// ------------------- EVENTOS ------------------- //
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand() && !interaction.isStringSelectMenu()) return;
-
-    try {
-        if (interaction.isChatInputCommand()) {
-            const { commandName } = interaction;
-
-            // --- Moderación ---
-            if (['ban','kick','mute','unmute'].includes(commandName)) {
-                const user = interaction.options.getUser('usuario');
-                const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-                if (!member) return interaction.reply({ content: '❌ Usuario no encontrado.', ephemeral: true });
-
-                if (commandName === 'ban') {
-                    if (!member.bannable) return interaction.reply({ content: '❌ No puedo banear a este usuario.', ephemeral: true });
-                    await member.ban({ reason: `Baneado por ${interaction.user.tag}` });
-                    return interaction.reply(`🔨 ${user.tag} ha sido baneado.`);
-                }
-
-                if (commandName === 'kick') {
-                    if (!member.kickable) return interaction.reply({ content: '❌ No puedo expulsar a este usuario.', ephemeral: true });
-                    await member.kick(`Expulsado por ${interaction.user.tag}`);
-                    return interaction.reply(`👢 ${user.tag} ha sido expulsado.`);
-                }
-
-                if (commandName === 'mute') {
-                    await member.timeout(60 * 60 * 1000, "Muteado por comando");
-                    return interaction.reply(`🔇 ${user.tag} ha sido muteado.`);
-                }
-
-                if (commandName === 'unmute') {
-                    await member.timeout(null);
-                    return interaction.reply(`🔊 ${user.tag} ha sido desmuteado.`);
-                }
-            }
-
-            // --- Warn/Unwarn ---
-            if (commandName === 'warn') {
-                const user = interaction.options.getUser('usuario');
-                const reason = interaction.options.getString('razon') || "Sin razón";
-                return interaction.reply(`⚠️ ${user.tag} ha sido advertido. Razón: ${reason}`);
-            }
-            if (commandName === 'unwarn') {
-                const user = interaction.options.getUser('usuario');
-                return interaction.reply(`✅ Se eliminó la advertencia de ${user.tag}.`);
-            }
-
-            // --- Diversión ---
-            if (commandName === 'coinflip') return interaction.reply(Math.random() < 0.5 ? "🪙 Cara" : "🪙 Cruz");
-
-            if (commandName === 'ship') {
-                const user1 = interaction.options.getUser('user1');
-                const user2 = interaction.options.getUser('user2');
-                return interaction.reply(`💞 Ship entre **${user1.username}** y **${user2.username}**: ${Math.floor(Math.random()*100)}%`);
-            }
-
-            if (commandName === 'confess') {
-                const msg = interaction.options.getString('mensaje');
-                await interaction.channel.send(`📢 Confesión anónima:\n>>> ${msg}`);
-                return interaction.reply({ content: "✅ Tu confesión fue enviada anónimamente.", ephemeral: true });
-            }
-
-            // --- IA ---
-            if (commandName === 'ask') {
-                const pregunta = interaction.options.getString('pregunta');
-                await interaction.deferReply();
-                try {
-                    const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
-                    const respuesta = await openai.chat.completions.create({
-                        model: "gpt-4o-mini",
-                        messages: [
-                            { role: "system", content: "Responde como si fueras el usuario." },
-                            { role: "user", content: pregunta }
-                        ]
-                    });
-                    await interaction.editReply(respuesta.choices[0]?.message?.content || "⚠️ No hubo respuesta.");
-                } catch (err) {
-                    console.error("Error en /ask:", err);
-                    await interaction.editReply("❌ Error al obtener respuesta de la IA.");
-                }
-            }
-
-            // --- Soporte ---
-            if (commandName === 'soporte') {
-                const embed = new EmbedBuilder()
-                    .setColor("Purple")
-                    .setTitle("📌 Sistema de soporte")
-                    .setDescription("Selecciona tu duda en el menú de abajo 👇");
-
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId("menu_soporte")
-                    .setPlaceholder("Selecciona tu duda")
-                    .addOptions([
-                        { label: "❓ Cómo creo un ticket", description: "Aprende a crear un ticket de soporte", value: "ticket" },
-                        { label: "🚨 Cómo hago un reporte", description: "Dónde y cómo reportar", value: "reporte" },
-                        { label: "🎮 Cómo me uno al servidor RP", description: "Guía para entrar al roleplay", value: "rp" },
-                        { label: "🛡️ Cómo me postulo a moderación", description: "Proceso para aplicar a staff", value: "mod" }
-                    ]);
-
-                const row = new ActionRowBuilder().addComponents(menu);
-
-                return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-            }
-        }
-
-        // --- Menú de soporte ---
-        if (interaction.isStringSelectMenu() && interaction.customId === "menu_soporte") {
-            const respuestas = {
-                ticket: "📌 Para crear un ticket abre el canal <#1405607173362417746> y presiona el botón de crear ticket.",
-                reporte: "🚨 Para hacer un reporte utiliza el canal <#1405607173362417746> y sigue el formato de reporte.",
-                rp: "🎮 Para unirte al servidor RP revisa el canal <#1405672004870209566> donde publicamos el **status del servidor** y la IP de conexión.",
-                mod: "🛡️ Para postularte a moderación visita el canal <#1406954923631050954> y completa la postulación."
-            };
-            await interaction.reply({ content: respuestas[interaction.values[0]] || "❌ Opción no válida.", ephemeral: true });
-        }
-    } catch (err) {
-        console.error("Error general en interactionCreate:", err);
-        if (interaction.replied || interaction.deferred) {
-            await interaction.editReply("❌ Ocurrió un error inesperado.");
-        } else {
-            await interaction.reply({ content: "❌ Ocurrió un error inesperado.", ephemeral: true });
-        }
-    }
+// Auto rol al unirse
+client.on("guildMemberAdd", (member) => {
+  const role = member.guild.roles.cache.get(autoRoleId);
+  if (role) {
+    member.roles.add(role).catch(console.error);
+  }
 });
 
-// --- Anti-Raid ---
-client.on('guildMemberAdd', async member => {
-    const accountAge = Date.now() - member.user.createdAt.getTime();
-    if (accountAge < 1000 * 60 * 60 * 24 * 7) {
-        try { await member.send("🚨 Has sido baneado automáticamente por el sistema anti-raid."); } catch {}
-        await member.ban({ reason: "Anti-Raid: cuenta sospechosa" });
-        const channel = member.guild.systemChannel;
-        if (channel) channel.send(`🚨 ${member.user.tag} fue baneado automáticamente por el **anti-raid**.`);
+// Anti-raid simple (flood de mensajes repetidos)
+const userMessages = new Map();
+client.on("messageCreate", (message) => {
+  if (message.author.bot) return;
+
+  const { author, content, guild } = message;
+  const now = Date.now();
+
+  if (!userMessages.has(author.id)) {
+    userMessages.set(author.id, { lastMsg: content, count: 1, time: now });
+  } else {
+    let data = userMessages.get(author.id);
+    if (data.lastMsg === content && now - data.time < 5000) {
+      data.count++;
+      if (data.count >= 5) {
+        // Aplica mute temporal
+        const muteRole = guild.roles.cache.get(muteRoleId);
+        if (muteRole) {
+          message.member.roles.add(muteRole).catch(console.error);
+          message.channel.send(`${author} ha sido muteado por spam.`);
+        }
+      }
+    } else {
+      userMessages.set(author.id, { lastMsg: content, count: 1, time: now });
     }
+  }
+});
+
+// ======= COMANDOS =======
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const member = interaction.member;
+
+  // --- STATUS ---
+  if (interaction.commandName === "status") {
+    if (member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+      const nuevoEstado = interaction.options.getString("estado");
+      if (nuevoEstado) serverStatus = nuevoEstado;
+
+      await interaction.reply({
+        embeds: [serverStatus === "open" ? embedAbierto : embedCerrado],
+      });
+    } else {
+      await interaction.reply({
+        embeds: [serverStatus === "open" ? embedAbierto : embedCerrado],
+        ephemeral: true,
+      });
+    }
+  }
+
+  // --- BAN ---
+  if (interaction.commandName === "ban") {
+    if (!member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+      return interaction.reply({ content: "No tienes permisos para usar este comando.", ephemeral: true });
+    }
+    const target = interaction.options.getUser("usuario");
+    const reason = interaction.options.getString("razón") || "Sin especificar";
+
+    const guildMember = interaction.guild.members.cache.get(target.id);
+    if (guildMember) {
+      await target.send(`Has sido baneado de **${interaction.guild.name}**. Razón: ${reason}`).catch(() => {});
+      await guildMember.ban({ reason });
+      await interaction.reply(`✅ ${target.tag} ha sido baneado. Razón: ${reason}`);
+    }
+  }
+
+  // --- KICK ---
+  if (interaction.commandName === "kick") {
+    if (!member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
+      return interaction.reply({ content: "No tienes permisos para usar este comando.", ephemeral: true });
+    }
+    const target = interaction.options.getUser("usuario");
+    const reason = interaction.options.getString("razón") || "Sin especificar";
+
+    const guildMember = interaction.guild.members.cache.get(target.id);
+    if (guildMember) {
+      await target.send(`Has sido expulsado de **${interaction.guild.name}**. Razón: ${reason}`).catch(() => {});
+      await guildMember.kick(reason);
+      await interaction.reply(`✅ ${target.tag} ha sido expulsado. Razón: ${reason}`);
+    }
+  }
+
+  // --- WARN ---
+  if (interaction.commandName === "warn") {
+    if (!member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return interaction.reply({ content: "No tienes permisos para usar este comando.", ephemeral: true });
+    }
+    const target = interaction.options.getUser("usuario");
+    const reason = interaction.options.getString("razón") || "Sin especificar";
+
+    await target.send(`⚠️ Has recibido una advertencia en **${interaction.guild.name}**. Razón: ${reason}`).catch(() => {});
+    await interaction.reply(`⚠️ ${target.tag} ha sido advertido. Razón: ${reason}`);
+
+    const logsChannel = interaction.guild.channels.cache.get(warnLogsChannel);
+    if (logsChannel) logsChannel.send(`⚠️ ${target.tag} fue advertido por ${member.user.tag}. Razón: ${reason}`);
+  }
+});
+
+// ======= REGISTRO DE COMANDOS =======
+client.on("ready", async () => {
+  const data = [
+    new SlashCommandBuilder()
+      .setName("status")
+      .setDescription("Muestra o cambia el estado del servidor")
+      .addStringOption(option =>
+        option.setName("estado")
+          .setDescription("Nuevo estado (solo Staff)")
+          .setRequired(false)
+          .addChoices(
+            { name: "Abierto", value: "open" },
+            { name: "Cerrado", value: "closed" }
+          )
+      ),
+    new SlashCommandBuilder()
+      .setName("ban")
+      .setDescription("Banea a un usuario")
+      .addUserOption(opt => opt.setName("usuario").setDescription("Usuario a banear").setRequired(true))
+      .addStringOption(opt => opt.setName("razón").setDescription("Razón del baneo")),
+    new SlashCommandBuilder()
+      .setName("kick")
+      .setDescription("Expulsa a un usuario")
+      .addUserOption(opt => opt.setName("usuario").setDescription("Usuario a expulsar").setRequired(true))
+      .addStringOption(opt => opt.setName("razón").setDescription("Razón de la expulsión")),
+    new SlashCommandBuilder()
+      .setName("warn")
+      .setDescription("Advierte a un usuario")
+      .addUserOption(opt => opt.setName("usuario").setDescription("Usuario a advertir").setRequired(true))
+      .addStringOption(opt => opt.setName("razón").setDescription("Razón de la advertencia"))
+  ].map(cmd => cmd.toJSON());
+
+  await client.application.commands.set(data);
+  console.log("✅ Comandos registrados: /status, /ban, /kick, /warn");
 });
 
 client.login(process.env.TOKEN);
